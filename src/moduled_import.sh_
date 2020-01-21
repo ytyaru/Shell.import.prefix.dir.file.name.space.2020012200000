@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+SelfPath() { echo "$(__Join "$(SelfParent)" "$(SelfName)")"; }
+SelfParent() { echo "$(__Parent "${BASH_SOURCE:-0}")"; }
+SelfName() { echo "$(__Name "${BASH_SOURCE:-0}")"; }
+SelfExt() { echo "$(__Ext "${BASH_SOURCE:-0}")"; }
+SelfNameId() { echo "$(__NameId "${BASH_SOURCE:-0}")"; } # WithoutExt
+CallerPath() { echo "$(__Join "$(CallerParent)" "$(CallerName)")"; }
+CallerParent() { echo "$(__Parent "$0")"; }
+CallerName() { echo "$(__Name "$0")"; }
+CallerExt() { echo "$(__Ext "$0")"; }
+CallerNameId() { echo "$(__NameId "$0")"; } # WithoutExt
+__Join() { args=("$@"); echo "$(IFS="${args[0]}"; echo "${args[*]:1:${#args[@]}}")"; }
+__Parent() { echo "$(cd "$(dirname "$1")"; pwd)"; }
+__Name() { echo "$(basename "$1")"; }
+__Ext() { local n="$(__Name $1)"; echo "${n##*.}"; }
+__NameId() { local n="$(__Name $1)"; echo "${n%.*}"; }
+__Import() {
+	ListupFunctions() {
+		for file in "$@"; do (
+			env -i bash -c ". "$file"; "'echo "$(declare -F -p | cut -d " " -f 3)";'
+		) done
+	}
+	RenameFunction() { # $1:old_func_name, $2:new_func_name
+		declare -F "$1" > /dev/null || return 1
+		eval "$(echo "${2}()"; declare -f ${1} | tail -n +2)"
+		unset -f "$1"
+	}
+#	DirNames() { # $1: a/b/c/d.sh => a.b.c.d.   d.sh => ''
+	Prefix() { # $1: a/b/c/d.sh => a.b.c.d.   d.sh => ''
+		local SEP='/'; local DOT='.'; 
+		local dir_names="$1"
+		local filename=$(__NameId "$1")
+#		[[ "$1" == *.sh ]] && dir_names="$(dirname "$1")"
+		[[ "$1" == *.sh ]] && dir_names="$(dirname "$1")" || filename='mod.sh' 
+#		[[ "$dir_names" == *.sh ]] && dir_names=''
+
+#		dir_names="${dir_names//\//.}"
+#		[ -n "$dir_names" ] dir_names+='.'
+		dir_names="${dir_names//$SEP/$DOT}"
+		[ -n "$dir_names" ] && dir_names+=$DOT
+		echo "$dir_names$filename"
+#		echo ${dir_names//\//.}
+#		dir_names="$(dirname "$1")"
+	}
+	PrefixedName() { # $1: a/b/c/d.sh, $2:func => a.b.c.d.func   $1:'', $2: func => func
+		local SEP='/'; local DOT='.'; 
+		local dir_names="$1"
+		local filename=$(__NameId "$1")
+		local funcname="$2"
+#		[[ "$1" == *.sh ]] && dir_names="$(dirname "$1")" || filename='mod.sh' 
+		[[ "$1" = *\.sh ]] && dir_names="$(dirname "$1")"
+		[ '.' = "$dir_names" ] && dir_names=''
+#		zenity --info --text "$dir_names"
+		dir_names="${dir_names//$SEP/$DOT}"
+		[ -n "$dir_names" ] && dir_names+=$DOT
+		[ -n "$filename" ] && filename+=$DOT
+		echo "$dir_names$filename$funcname"
+	}
+	for file in "$@"; do {
+#		dirnames="$(DirNames "$file")"
+#		filename="$(__NameId "$file")"
+#		prefix="$(Prefix "$file")"
+		funcs="$(ListupFunctions "$file")"
+		. "$(__Join '/' "$(CallerParent)" "$file")"
+#		zenity --info --text "$file"
+		for func in $(echo -e "$funcs"); do
+#			zenity --info --text "$(PrefixedName "$file" "$func")"
+			RenameFunction "$func" "$(PrefixedName "$file" "$func")"
+#			newname=$func; [ -n "$prefix" ] && newname="$prefix.$func"
+#			RenameFunction "$func" "$(__NameId "$file").$func"
+#			RenameFunction "$func" "$dirname$filename.$func"
+		done
+	} done;
+}
+__Import "$@"
